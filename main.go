@@ -16,6 +16,8 @@ func main() {
 
 	var err error
 	switch cmd {
+	case "clone":
+		err = Clone(args)
 	case "pull":
 		err = Pull(args)
 	case "help", "--help", "-h":

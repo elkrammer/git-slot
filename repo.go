@@ -14,7 +14,7 @@ type RepoInfo struct {
 	CurrentDir string // absolute path to cwd
 }
 
-// walks up from cwd looking for a bare .git directory.
+// walks up from cwd looking for a bare repo directory
 func ResolveRepo() (*RepoInfo, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -23,35 +23,58 @@ func ResolveRepo() (*RepoInfo, error) {
 
 	dir := cwd
 	for {
-		gitDir := filepath.Join(dir, ".git")
-		info, err := os.Stat(gitDir)
-		if err == nil && info.IsDir() {
-			// found .git/, check if bare
-			isBare, err := isBareRepo(gitDir)
-			if err != nil {
-				return nil, err
-			}
-			if isBare {
-				return &RepoInfo{
-					Root:       dir,
-					GitDir:     gitDir,
-					IsBare:     true,
-					CurrentDir: cwd,
-				}, nil
-			}
-			// .git exists but not bare; could be a regular clone or worktree; check if it's a worktree gitdir file
-			if isWorktreeGitdir(gitDir) {
-				bareDir, err := readWorktreeGitdir(gitDir)
+		gitDot := filepath.Join(dir, ".git")
+		info, err := os.Stat(gitDot)
+		if err == nil {
+			if info.IsDir() {
+				// found .git/ directory, check if bare
+				isBare, err := isBareRepo(gitDot)
 				if err != nil {
 					return nil, err
 				}
-				root := filepath.Dir(bareDir)
-				return &RepoInfo{
-					Root:       root,
-					GitDir:     bareDir,
-					IsBare:     true,
-					CurrentDir: cwd,
-				}, nil
+				if isBare {
+					return &RepoInfo{
+						Root:       dir,
+						GitDir:     gitDot,
+						IsBare:     true,
+						CurrentDir: cwd,
+					}, nil
+				}
+				// .git/ exists but it's not bare  it's a regular repo, does not have our layout
+			} else {
+				// .git is a file - worktree gitdir link
+				bareDir, err := readWorktreeGitdir(gitDot)
+				if err == nil {
+					root := filepath.Dir(bareDir)
+					return &RepoInfo{
+						Root:       root,
+						GitDir:     bareDir,
+						IsBare:     true,
+						CurrentDir: cwd,
+					}, nil
+				}
+			}
+		}
+
+		// scan for <name>.git/ directories that are bare
+		entries, err := os.ReadDir(dir)
+		if err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() && strings.HasSuffix(entry.Name(), ".git") {
+					candidate := filepath.Join(dir, entry.Name())
+					isBare, err := isBareRepo(candidate)
+					if err != nil {
+						return nil, err
+					}
+					if isBare {
+						return &RepoInfo{
+							Root:       dir,
+							GitDir:     candidate,
+							IsBare:     true,
+							CurrentDir: cwd,
+						}, nil
+					}
+				}
 			}
 		}
 
@@ -62,7 +85,7 @@ func ResolveRepo() (*RepoInfo, error) {
 		dir = parent
 	}
 
-	return nil, fmt.Errorf("not in a git-slot repository (no bare .git found)")
+	return nil, fmt.Errorf("not in a git-slot repository (no bare repo found)")
 }
 
 func flattenBranch(branch string) string {
@@ -80,15 +103,6 @@ func isBareRepo(gitDir string) (bool, error) {
 		return false, nil // assume not bare if no config
 	}
 	return strings.Contains(string(data), "bare = true"), nil
-}
-
-func isWorktreeGitdir(gitDir string) bool {
-	info, err := os.Stat(gitDir)
-	if err != nil {
-		return false
-	}
-	// if .git is a file, it's a worktree gitdir link
-	return !info.IsDir()
 }
 
 func readWorktreeGitdir(path string) (string, error) {
