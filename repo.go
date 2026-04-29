@@ -65,7 +65,13 @@ func ResolveRepo() (*RepoInfo, error) {
 	return nil, fmt.Errorf("not in a git-slot repository (no bare .git found)")
 }
 
-func (r *RepoInfo) WorktreePath(branch string) string { return "/" }
+func flattenBranch(branch string) string {
+	return strings.ReplaceAll(branch, "/", "-")
+}
+
+func (r *RepoInfo) WorktreePath(branch string) string {
+	return filepath.Join(r.Root, flattenBranch(branch))
+}
 
 func isBareRepo(gitDir string) (bool, error) {
 	configPath := filepath.Join(gitDir, "config")
