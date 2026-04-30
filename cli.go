@@ -12,6 +12,7 @@ func Usage() {
 
 usage:
   git-slot clone <url> [directory]   clone bare repo and create default worktree
+  git-slot list                      list worktrees
   git-slot new <branch>              create local branch and worktree
   git-slot pull <remote/branch>      fetch remote branch and create worktree
 `)
@@ -24,6 +25,7 @@ func repoNameFromURL(url string) string {
 	return name
 }
 
+// handles the clone command
 func Clone(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: git-slot clone <url> [directory]")
@@ -69,6 +71,7 @@ func Clone(args []string) error {
 	return nil
 }
 
+// handles the new command
 func New(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: git-slot new <branch>")
@@ -99,7 +102,7 @@ func New(args []string) error {
 	return nil
 }
 
-// handles the pull command.
+// handles the pull command
 func Pull(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: git-slot pull <remote/branch>")
@@ -132,4 +135,93 @@ func Pull(args []string) error {
 
 	fmt.Println(worktreePath)
 	return nil
+}
+
+// handles the list command
+func List() error {
+	r, err := ResolveRepo()
+	if err != nil {
+		return err
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	listOut, err := RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "list", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("list worktrees failed: %w", err)
+	}
+
+	worktrees := parseWorktreeList(listOut)
+
+	var active []worktreeInfo
+	for _, wt := range worktrees {
+		if wt.isBare {
+			continue
+		}
+		wt.isCurrent = wt.path == cwd
+		wt.status = getWorktreeStatus(wt.path, wt.branch)
+		active = append(active, wt)
+	}
+
+	renderWorktreeList(active)
+	return nil
+}
+
+const (
+	reset  = "\033[0m"
+	bold   = "\033[1m"
+	uline  = "\033[4m"
+	red    = "\033[31m"
+	green  = "\033[32m"
+	yellow = "\033[93m"
+	cyan   = "\033[96m"
+)
+
+func renderWorktreeList(worktrees []worktreeInfo) {
+	if len(worktrees) == 0 {
+		fmt.Println("No worktrees found.")
+		return
+	}
+
+	branchPad := 0
+	for _, wt := range worktrees {
+		if l := len(wt.branch); l > branchPad {
+			branchPad = l
+		}
+	}
+
+	fmt.Printf("%sBranches (%d)%s\n", bold, len(worktrees), reset)
+
+	for _, wt := range worktrees {
+		prefix := "  "
+		if wt.isCurrent {
+			prefix = "* "
+		}
+
+		var branch string
+		if wt.isCurrent {
+			branch = green + bold + fmt.Sprintf("%s%-*s", prefix, branchPad, wt.branch) + reset
+		} else {
+			branch = fmt.Sprintf("%s%-*s", prefix, branchPad, wt.branch)
+		}
+
+		var status string
+		switch {
+		case wt.status == "clean":
+			status = green + "clean" + reset
+		case wt.status == "dirty":
+			status = yellow + "dirty" + reset
+		case strings.Contains(wt.status, "ahead"):
+			status = cyan + wt.status + reset
+		case strings.Contains(wt.status, "behind"):
+			status = red + wt.status + reset
+		default:
+			status = reset + wt.status + reset
+		}
+
+		fmt.Printf("  %s  %s\n", branch, status)
+	}
 }

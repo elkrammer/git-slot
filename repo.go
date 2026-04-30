@@ -14,6 +14,14 @@ type RepoInfo struct {
 	CurrentDir string // absolute path to cwd
 }
 
+type worktreeInfo struct {
+	path      string
+	branch    string
+	isBare    bool
+	isCurrent bool
+	status    string
+}
+
 // walks up from cwd looking for a bare repo directory
 func ResolveRepo() (*RepoInfo, error) {
 	cwd, err := os.Getwd()

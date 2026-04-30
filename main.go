@@ -20,6 +20,8 @@ func main() {
 		err = Clone(args)
 	case "new":
 		err = New(args)
+	case "list":
+		err = List()
 	case "pull":
 		err = Pull(args)
 	case "help", "--help", "-h":
