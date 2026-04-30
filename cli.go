@@ -12,6 +12,7 @@ func Usage() {
 
 usage:
   git-slot clone <url> [directory]   clone bare repo and create default worktree
+  git-slot new <branch>              create local branch and worktree
   git-slot pull <remote/branch>      fetch remote branch and create worktree
 `)
 }
@@ -60,6 +61,36 @@ func Clone(args []string) error {
 
 	worktreePath := filepath.Join(absTarget, flattenBranch(defaultBranch))
 	_, err = RunGit(absTarget, "--git-dir="+gitDir, "worktree", "add", worktreePath, defaultBranch)
+	if err != nil {
+		return fmt.Errorf("create worktree failed: %w", err)
+	}
+
+	fmt.Println(worktreePath)
+	return nil
+}
+
+func New(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: git-slot new <branch>")
+	}
+
+	branch := args[0]
+
+	r, err := ResolveRepo()
+	if err != nil {
+		return err
+	}
+
+	// check if branch already exists locally
+	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	branchExists := err == nil
+
+	worktreePath := r.WorktreePath(branch)
+	if branchExists {
+		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "add", worktreePath, branch)
+	} else {
+		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "add", worktreePath, "-b", branch)
+	}
 	if err != nil {
 		return fmt.Errorf("create worktree failed: %w", err)
 	}

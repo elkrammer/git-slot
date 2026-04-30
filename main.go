@@ -18,6 +18,8 @@ func main() {
 	switch cmd {
 	case "clone":
 		err = Clone(args)
+	case "new":
+		err = New(args)
 	case "pull":
 		err = Pull(args)
 	case "help", "--help", "-h":
