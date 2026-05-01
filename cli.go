@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -109,31 +111,83 @@ func New(args []string) error {
 
 // handles the pull command
 func Pull(args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: git-slot pull <remote/branch>")
-	}
-
-	remoteBranch := args[0]
-	parts := strings.SplitN(remoteBranch, "/", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("expected remote/branch, got %q", remoteBranch)
-	}
-	remote, branch := parts[0], parts[1]
-
 	r, err := ResolveRepo()
 	if err != nil {
 		return err
 	}
 
-	// fetch
-	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "fetch", remote, branch)
-	if err != nil {
-		return fmt.Errorf("fetch failed: %w", err)
+	var remote, branch string
+
+	if len(args) < 1 {
+		// fzf mode
+		if _, err := exec.LookPath("fzf"); err != nil {
+			return fmt.Errorf("fzf not found. install from https://github.com/junegunn/fzf")
+		}
+
+		// fetch origin
+		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "fetch", "origin")
+		if err != nil {
+			return fmt.Errorf("fetch origin failed: %w", err)
+		}
+
+		// get branch list
+		out, err := RunGit(r.GitDir, "--git-dir="+r.GitDir, "ls-remote", "--heads", "origin")
+		if err != nil {
+			return fmt.Errorf("list branches failed: %w", err)
+		}
+
+		// parse branches
+		var branches []string
+		for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			branchName := strings.TrimPrefix(fields[1], "refs/heads/")
+			if branchName != "" {
+				branches = append(branches, branchName)
+			}
+		}
+
+		// run fzf
+		cmd := exec.Command("fzf")
+		cmd.Stdin = strings.NewReader(strings.Join(branches, "\n"))
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		if err := cmd.Run(); err != nil {
+			return nil // cancelled
+		}
+		branch = strings.TrimSpace(buf.String())
+		if branch == "" {
+			return nil
+		}
+	} else {
+		// explicit branch
+		remoteBranch := args[0]
+		parts := strings.SplitN(remoteBranch, "/", 2)
+		if len(parts) == 2 {
+			remote, branch = parts[0], parts[1]
+		} else {
+			remote, branch = "origin", remoteBranch
+		}
+
+		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "fetch", remote, branch)
+		if err != nil {
+			return fmt.Errorf("fetch failed: %w", err)
+		}
 	}
 
 	// create worktree
 	worktreePath := r.WorktreePath(branch)
-	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "add", worktreePath, branch)
+
+	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	branchExists := err == nil
+
+	if branchExists {
+		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "add", worktreePath, branch)
+	} else {
+		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "add", worktreePath, "-b", branch, "origin/"+branch)
+	}
 	if err != nil {
 		return fmt.Errorf("create worktree failed: %w", err)
 	}
@@ -178,7 +232,6 @@ func List() error {
 const (
 	reset  = "\033[0m"
 	bold   = "\033[1m"
-	uline  = "\033[4m"
 	red    = "\033[31m"
 	green  = "\033[32m"
 	yellow = "\033[93m"
