@@ -53,13 +53,18 @@ func Clone(args []string) error {
 
 	_, err = RunGit(absTarget, "clone", "--bare", url, gitDirName)
 	if err != nil {
+		os.RemoveAll(absTarget)
 		return fmt.Errorf("clone failed: %w", err)
 	}
 
 	defaultBranch, err := RunGit(absTarget, "--git-dir="+gitDir, "symbolic-ref", "--short", "HEAD")
 	if err != nil {
+		os.RemoveAll(absTarget)
 		return fmt.Errorf("detect default branch: %w", err)
 	}
+	// strip refs/heads/ and heads/ prefixes that some git versions return
+	defaultBranch = strings.TrimPrefix(defaultBranch, "refs/heads/")
+	defaultBranch = strings.TrimPrefix(defaultBranch, "heads/")
 
 	worktreePath := filepath.Join(absTarget, flattenBranch(defaultBranch))
 	_, err = RunGit(absTarget, "--git-dir="+gitDir, "worktree", "add", worktreePath, defaultBranch)
