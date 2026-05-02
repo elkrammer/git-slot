@@ -14,6 +14,7 @@ func Usage() {
 
 usage:
   git-slot clone <url> [directory]   clone bare repo and create default worktree
+  git-slot completion <shell>         output shell completion script (zsh, bash)
   git-slot list                      list worktrees
   git-slot new <branch>              create local branch and worktree
   git-slot pull <remote/branch>      fetch remote branch and create worktree
