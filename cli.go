@@ -322,7 +322,8 @@ func Remove(args []string) error {
 	}
 
 	var worktreePath string
-	if branch == "." {
+	isCurrentWorktree := branch == "."
+	if isCurrentWorktree {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return fmt.Errorf("get current directory: %w", err)
@@ -338,32 +339,56 @@ func Remove(args []string) error {
 	}
 
 	if !force {
-		statusOut, _ := RunGit(worktreePath, "status", "--porcelain")
-		if strings.TrimSpace(statusOut) != "" {
-			fmt.Printf("Worktree '%s' has uncommitted changes. Remove anyway? [y/N] ", branch)
+		if isCurrentWorktree {
+			fmt.Printf("Remove current worktree? [y/N] ")
 			var answer string
 			fmt.Scanln(&answer)
 			if strings.ToLower(answer) != "y" {
 				return nil
 			}
-		}
-
-		upstreamRef, err := RunGit(worktreePath, "rev-parse", "--abbrev-ref", branch+"@{upstream}")
-		if err == nil && upstreamRef != "" {
-			countOut, err := RunGit(worktreePath, "rev-list", "--count", upstreamRef+"..HEAD")
-			if err == nil && countOut != "0" {
-				fmt.Printf("Branch '%s' is ahead of %s by %s commits. Remove anyway? [y/N] ", branch, upstreamRef, countOut)
+		} else {
+			cmd := exec.Command("git", "status", "--porcelain")
+			cmd.Dir = worktreePath
+			out, err := cmd.CombinedOutput()
+			statusOut := strings.TrimSpace(string(out))
+			if statusOut != "" {
+				fmt.Printf("Worktree '%s' has uncommitted changes. Remove anyway? [y/N] ", branch)
 				var answer string
 				fmt.Scanln(&answer)
 				if strings.ToLower(answer) != "y" {
 					return nil
 				}
 			}
+
+			upstreamRef, err := RunGit(worktreePath, "rev-parse", "--abbrev-ref", branch+"@{upstream}")
+			if err == nil && upstreamRef != "" {
+				countOut, err := RunGit(worktreePath, "rev-list", "--count", upstreamRef+"..HEAD")
+				if err == nil && countOut != "0" {
+					fmt.Printf("Branch '%s' is ahead of %s by %s commits. Remove anyway? [y/N] ", branch, upstreamRef, countOut)
+					var answer string
+					fmt.Scanln(&answer)
+					if strings.ToLower(answer) != "y" {
+						return nil
+					}
+				}
+			}
 		}
+	}
+
+	origDir, _ := os.Getwd()
+	cleanupDir := func() {
+		if origDir != "" {
+			os.Chdir(origDir)
+		}
+	}
+
+	if strings.HasPrefix(worktreePath, origDir) || worktreePath == origDir {
+		os.Chdir(r.Root)
 	}
 
 	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "remove", "--force", worktreePath)
 	if err != nil {
+		cleanupDir()
 		return fmt.Errorf("remove worktree failed: %w", err)
 	}
 
