@@ -18,7 +18,7 @@ usage:
   git-slot list (ls)                  list worktrees
   git-slot new <branch>               create local branch and worktree
   git-slot pull <remote/branch>       fetch remote branch and create worktree
-  git-slot remove (rm) <branch>       remove worktree and delete branch
+  git-slot remove (rm) [-f] <branch>  remove worktree and delete branch (use -f to skip prompts)
 `)
 }
 
@@ -125,7 +125,7 @@ func Pull(args []string) error {
 		return err
 	}
 
-	var remote, branch string
+	var branch string
 
 	if len(args) < 1 {
 		// fzf mode
@@ -175,14 +175,9 @@ func Pull(args []string) error {
 		remoteBranch := args[0]
 		parts := strings.SplitN(remoteBranch, "/", 2)
 		if len(parts) == 2 {
-			remote, branch = parts[0], parts[1]
+			branch = parts[1]
 		} else {
-			remote, branch = "origin", remoteBranch
-		}
-
-		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "fetch", remote, branch)
-		if err != nil {
-			return fmt.Errorf("fetch failed: %w", err)
+			branch = remoteBranch
 		}
 	}
 
@@ -306,20 +301,68 @@ func renderWorktreeList(worktrees []worktreeInfo) {
 
 // handles the remove command
 func Remove(args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: git-slot remove <branch>")
+	force := false
+	branch := ""
+
+	for _, arg := range args {
+		if arg == "-f" || arg == "--force" {
+			force = true
+		} else if !strings.HasPrefix(arg, "-") && branch == "" {
+			branch = arg
+		}
 	}
 
-	branch := args[0]
+	if branch == "" {
+		return fmt.Errorf("usage: git-slot remove [-f] <branch>")
+	}
 
 	r, err := ResolveRepo()
 	if err != nil {
 		return err
 	}
 
-	worktreePath := r.WorktreePath(branch)
+	var worktreePath string
+	if branch == "." {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("get current directory: %w", err)
+		}
+		worktreePath = cwd
+		branch, err = RunGit(cwd, "rev-parse", "--abbrev-ref", "HEAD")
+		if err != nil {
+			return fmt.Errorf("detect current branch: %w", err)
+		}
+		branch = strings.TrimPrefix(branch, "heads/")
+	} else {
+		worktreePath = r.WorktreePath(branch)
+	}
 
-	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "remove", worktreePath)
+	if !force {
+		statusOut, _ := RunGit(worktreePath, "status", "--porcelain")
+		if strings.TrimSpace(statusOut) != "" {
+			fmt.Printf("Worktree '%s' has uncommitted changes. Remove anyway? [y/N] ", branch)
+			var answer string
+			fmt.Scanln(&answer)
+			if strings.ToLower(answer) != "y" {
+				return nil
+			}
+		}
+
+		upstreamRef, err := RunGit(worktreePath, "rev-parse", "--abbrev-ref", branch+"@{upstream}")
+		if err == nil && upstreamRef != "" {
+			countOut, err := RunGit(worktreePath, "rev-list", "--count", upstreamRef+"..HEAD")
+			if err == nil && countOut != "0" {
+				fmt.Printf("Branch '%s' is ahead of %s by %s commits. Remove anyway? [y/N] ", branch, upstreamRef, countOut)
+				var answer string
+				fmt.Scanln(&answer)
+				if strings.ToLower(answer) != "y" {
+					return nil
+				}
+			}
+		}
+	}
+
+	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "remove", "--force", worktreePath)
 	if err != nil {
 		return fmt.Errorf("remove worktree failed: %w", err)
 	}
