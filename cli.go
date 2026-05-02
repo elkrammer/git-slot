@@ -59,6 +59,13 @@ func Clone(args []string) error {
 		return fmt.Errorf("clone failed: %w", err)
 	}
 
+	// set up remote tracking branches so origin/<branch> refs exist
+	_, err = RunGit(absTarget, "--git-dir="+gitDir, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+	if err != nil {
+		os.RemoveAll(absTarget)
+		return fmt.Errorf("set fetch config: %w", err)
+	}
+
 	defaultBranch, err := RunGit(absTarget, "--git-dir="+gitDir, "symbolic-ref", "--short", "HEAD")
 	if err != nil {
 		os.RemoveAll(absTarget)
@@ -124,8 +131,8 @@ func Pull(args []string) error {
 			return fmt.Errorf("fzf not found. install from https://github.com/junegunn/fzf")
 		}
 
-		// fetch origin
-		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "fetch", "origin")
+		// fetch origin with explicit refspec to populate remote tracking branches
+		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "fetch", "origin", "refs/heads/*:refs/remotes/origin/*")
 		if err != nil {
 			return fmt.Errorf("fetch origin failed: %w", err)
 		}
@@ -180,6 +187,12 @@ func Pull(args []string) error {
 	// create worktree
 	worktreePath := r.WorktreePath(branch)
 
+	// fetch the specific branch first so origin/<branch> exists as remote tracking ref
+	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "fetch", "origin", "refs/heads/"+branch+":refs/remotes/origin/"+branch)
+	if err != nil {
+		return fmt.Errorf("fetch failed: %w", err)
+	}
+
 	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 	branchExists := err == nil
 
@@ -190,6 +203,11 @@ func Pull(args []string) error {
 	}
 	if err != nil {
 		return fmt.Errorf("create worktree failed: %w", err)
+	}
+	// set upstream tracking (worktree add doesn't always do this)
+	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "branch", "--set-upstream-to=origin/"+branch, branch)
+	if err != nil {
+		return fmt.Errorf("set upstream failed: %w", err)
 	}
 
 	fmt.Println(worktreePath)
