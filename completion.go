@@ -68,7 +68,7 @@ _git-slot() {
   typeset -A opt_args
 
   _arguments -C \
-    '1:command:(clone list new pull completion)' \
+    '1:command:(clone completion list ls new pull remove rm)' \
     '2:argument:->argument'
 
   case $state in
@@ -100,6 +100,19 @@ _git-slot() {
             _describe 'local branches' local_branches
           fi
           ;;
+        remove|rm)
+          local -a worktrees
+          local gitdir
+          gitdir=$(_git_slot_find_gitdir)
+          if [[ -n "$gitdir" ]]; then
+            worktrees=(${(f)"$(git --git-dir="$gitdir" worktree list --porcelain 2>/dev/null | grep '^branch ' | sed 's|branch refs/heads/||')"})
+          else
+            worktrees=(${(f)"$(git worktree list --porcelain 2>/dev/null | grep '^branch ' | sed 's|branch refs/heads/||')"})
+          fi
+          if [[ ${#worktrees} -gt 0 ]]; then
+            _describe 'worktrees' worktrees
+          fi
+          ;;
         completion)
           _describe 'shells' '(zsh bash)'
           ;;
@@ -118,7 +131,7 @@ _git-slot() {
   _init_completion || return
 
   if [[ ${#words[@]} -eq 2 ]]; then
-    COMPREPLY=($(compgen -W "clone list new pull completion" -- "$cur"))
+    COMPREPLY=($(compgen -W "clone completion list ls new pull remove rm" -- "$cur"))
   elif [[ ${#words[@]} -eq 3 ]]; then
     case "${words[2]}" in
       pull)
@@ -128,6 +141,24 @@ _git-slot() {
           local branches
           branches=$(git --git-dir="$gitdir" ls-remote --heads origin 2>/dev/null | while read hash ref; do ref=${ref#refs/heads/}; echo "$ref"; done)
           COMPREPLY=($(compgen -W "$branches" -- "$cur"))
+        fi
+        ;;
+      new)
+        local gitdir
+        gitdir=$(_git_slot_find_gitdir_bash)
+        if [[ -n "$gitdir" ]]; then
+          local local_branches
+          local_branches=$(git --git-dir="$gitdir" branch --list 2>/dev/null | sed 's/^[* ] //')
+          COMPREPLY=($(compgen -W "$local_branches" -- "$cur"))
+        fi
+        ;;
+      remove|rm)
+        local gitdir
+        gitdir=$(_git_slot_find_gitdir_bash)
+        if [[ -n "$gitdir" ]]; then
+          local worktrees
+          worktrees=$(git --git-dir="$gitdir" worktree list --porcelain 2>/dev/null | grep '^branch ' | sed 's|branch refs/heads/||')
+          COMPREPLY=($(compgen -W "$worktrees" -- "$cur"))
         fi
         ;;
       completion)

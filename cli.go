@@ -13,11 +13,12 @@ func Usage() {
 	fmt.Println(`git-slot - makes git worktrees behave like a normal directory tree
 
 usage:
-  git-slot clone <url> [directory]   clone bare repo and create default worktree
+  git-slot clone <url> [directory]    clone bare repo and create default worktree
   git-slot completion <shell>         output shell completion script (zsh, bash)
-  git-slot list                      list worktrees
-  git-slot new <branch>              create local branch and worktree
-  git-slot pull <remote/branch>      fetch remote branch and create worktree
+  git-slot list (ls)                  list worktrees
+  git-slot new <branch>               create local branch and worktree
+  git-slot pull <remote/branch>       fetch remote branch and create worktree
+  git-slot remove (rm) <branch>       remove worktree and delete branch
 `)
 }
 
@@ -301,4 +302,33 @@ func renderWorktreeList(worktrees []worktreeInfo) {
 
 		fmt.Printf("  %s  %s\n", branch, status)
 	}
+}
+
+// handles the remove command
+func Remove(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: git-slot remove <branch>")
+	}
+
+	branch := args[0]
+
+	r, err := ResolveRepo()
+	if err != nil {
+		return err
+	}
+
+	worktreePath := r.WorktreePath(branch)
+
+	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "remove", worktreePath)
+	if err != nil {
+		return fmt.Errorf("remove worktree failed: %w", err)
+	}
+
+	_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "branch", "-d", branch)
+	if err != nil {
+		return fmt.Errorf("delete branch failed: %w", err)
+	}
+
+	fmt.Println(worktreePath)
+	return nil
 }

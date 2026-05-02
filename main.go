@@ -20,10 +20,14 @@ func main() {
 		err = Clone(args)
 	case "completion":
 		err = Completion(args)
-	case "list":
+	case "list", "ls":
 		err = List()
+	case "new":
+		err = New(args)
 	case "pull":
 		err = Pull(args)
+	case "remove", "rm":
+		err = Remove(args)
 	case "help", "--help", "-h":
 		Usage()
 	default:
