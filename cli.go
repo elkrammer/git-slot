@@ -10,7 +10,7 @@ import (
 )
 
 func Usage() {
-	fmt.Println(`git-slot - makes git worktrees behave like a normal directory tree
+	fmt.Println(`git-slot - branches as folders
 
 usage:
   git-slot clone <url> [directory]    clone bare repo and create default worktree

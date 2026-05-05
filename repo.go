@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -64,25 +65,48 @@ func ResolveRepo() (*RepoInfo, error) {
 			}
 		}
 
-		// scan for <name>.git/ directories that are bare
+		// scan for bare repo directories
 		entries, err := os.ReadDir(dir)
 		if err == nil {
+			var bareCandidates []string
 			for _, entry := range entries {
-				if entry.IsDir() && strings.HasSuffix(entry.Name(), ".git") {
+				if entry.IsDir() {
 					candidate := filepath.Join(dir, entry.Name())
 					isBare, err := isBareRepo(candidate)
 					if err != nil {
 						return nil, err
 					}
 					if isBare {
-						return &RepoInfo{
-							Root:       dir,
-							GitDir:     candidate,
-							IsBare:     true,
-							CurrentDir: cwd,
-						}, nil
+						bareCandidates = append(bareCandidates, candidate)
 					}
 				}
+			}
+
+			if len(bareCandidates) == 1 {
+				return &RepoInfo{
+					Root:       dir,
+					GitDir:     bareCandidates[0],
+					IsBare:     true,
+					CurrentDir: cwd,
+				}, nil
+			}
+			if len(bareCandidates) > 1 {
+				// prefer *.git/ directories
+				var gitCandidates []string
+				for _, c := range bareCandidates {
+					if strings.HasSuffix(filepath.Base(c), ".git") {
+						gitCandidates = append(gitCandidates, c)
+					}
+				}
+				if len(gitCandidates) == 1 {
+					return &RepoInfo{
+						Root:       dir,
+						GitDir:     gitCandidates[0],
+						IsBare:     true,
+						CurrentDir: cwd,
+					}, nil
+				}
+				return nil, fmt.Errorf("multiple bare repos found in %s: %v", dir, bareCandidates)
 			}
 		}
 
@@ -106,11 +130,16 @@ func (r *RepoInfo) WorktreePath(branch string) string {
 
 func isBareRepo(gitDir string) (bool, error) {
 	configPath := filepath.Join(gitDir, "config")
-	data, err := os.ReadFile(configPath)
+	cmd := exec.Command("git", "config", "--file", configPath, "--get", "core.bare")
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return false, nil // assume not bare if no config
+		// assume this repo is not bare
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, fmt.Errorf("checking if %s is bare: %w\n%s", gitDir, err, strings.TrimSpace(string(out)))
 	}
-	return strings.Contains(string(data), "bare = true"), nil
+	return strings.TrimSpace(string(out)) == "true", nil
 }
 
 func readWorktreeGitdir(path string) (string, error) {
