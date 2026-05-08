@@ -16,7 +16,7 @@ usage:
   git-slot clone <url> [directory]    clone bare repo and create default worktree
   git-slot completion <shell>         output shell completion script (zsh, bash)
   git-slot list (ls)                  list worktrees
-  git-slot new <branch>               create local branch and worktree
+  git-slot new <branch> [base]        create local branch and worktree (base defaults to HEAD)
   git-slot pull <remote/branch>       fetch remote branch and create worktree
   git-slot remove (rm) [-f] <branch>  remove worktree and delete branch (use -f to skip prompts)
 `)
@@ -90,10 +90,14 @@ func Clone(args []string) error {
 // handles the new command
 func New(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: git-slot new <branch>")
+		return fmt.Errorf("usage: git-slot new <branch> [base-branch]")
 	}
 
 	branch := args[0]
+	var baseBranch string
+	if len(args) >= 2 {
+		baseBranch = args[1]
+	}
 
 	r, err := ResolveRepo()
 	if err != nil {
@@ -108,7 +112,11 @@ func New(args []string) error {
 	if branchExists {
 		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "add", worktreePath, branch)
 	} else {
-		_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "add", worktreePath, "-b", branch)
+		if baseBranch != "" {
+			_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "add", worktreePath, "-b", branch, baseBranch)
+		} else {
+			_, err = RunGit(r.GitDir, "--git-dir="+r.GitDir, "worktree", "add", worktreePath, "-b", branch)
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("create worktree failed: %w", err)
