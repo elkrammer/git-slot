@@ -1,6 +1,6 @@
 # git-slot
 
-git-slot makes Git worktrees usable by turning branches into directories.
+git-slot is an opinionated tool that turns Git worktrees into a directory-based workflow.
 
 No more `git stash` gymnastics. no more "oh shit i committed to the wrong branch".
 Every branch gets its own directory you can switch between instantly.
